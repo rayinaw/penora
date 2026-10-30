@@ -1,0 +1,50 @@
+# pool-manager configuration — copy to pool.config.yaml and edit.
+# NOTE: all *_root paths are interpreted by the DOCKER DAEMON (host paths),
+# not by the pool-manager process.
+
+db_path: ./manager-data/pool.db          # sqlite for registry
+image: pentera/browser-pod:dev           # pod image name
+
+# Host paths (on the docker host) for persistent volumes
+profiles_root: /opt/pentera/profiles     # per-profile persistent dirs (aged!)
+data_root: /opt/pentera/lease-data       # per-lease artifact bundles
+
+# Host port bases — host port = base + profile.slot
+port_base:
+  sidecar: 19000    # agent tool API
+  novnc:   16080    # human takeover UI
+  vnc:     15900    # raw VNC (optional)
+
+# Public hostname/IP used to build novnc_url returned to callers.
+# In production this should be the Tailscale IP of the VPS.
+public_host: 127.0.0.1
+
+# Shared docker network joining manager + pods. Required when pool-manager
+# itself runs in a container (compose default). Leave "" if manager runs
+# directly on the host.
+docker_network: pentera-net
+
+# Sidecar/browser defaults
+locale: en-US
+default_ttl_s: 3600
+heartbeat_stale_s: 120
+
+audit:
+  proxycheck_key: null        # optional proxycheck.io API key
+  timeout_s: 20
+
+# Seed profiles — upserted into registry at startup.
+# proxy_url format: http://user:pass@host:port  (Webshare static residential)
+profiles:
+  - id: profile-01
+    slot: 1
+    proxy_url: "http://user:pass@p.webshare.io:80"
+    geo: US
+  - id: profile-02
+    slot: 2
+    proxy_url: "http://user:pass@p.webshare.io:80"
+    geo: US
+  - id: profile-03
+    slot: 3
+    proxy_url: "http://user:pass@p.webshare.io:80"
+    geo: GB

@@ -1,0 +1,13 @@
+# secrets & runtime state — never commit
+pool.config.yaml
+*.config.yaml
+!pool.config.example.yaml
+manager-data/
+lease-data/
+profiles/
+services/bp-mcp/data/
+.env
+__pycache__/
+*.pyc
+.venv/
+node_modules/

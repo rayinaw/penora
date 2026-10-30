@@ -1,0 +1,76 @@
+networks:
+  pentera-net:
+    name: pentera-net
+    external: true   # shared with browser pods; create once: docker network create pentera-net
+
+services:
+  # Build the pod image once: `docker compose build browser-pod-image`  (~1.5GB)
+  browser-pod-image:
+    build: ./services/browser-pool/pod
+    image: pentera/browser-pod:dev
+    profiles: ["build"]
+
+  pool-manager:
+    build: ./services/browser-pool/manager
+    image: pentera/pool-manager:dev
+    command: uvicorn pool_manager.main:app --host 0.0.0.0 --port 8000
+    networks:
+      - pentera-net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./services/browser-pool/manager-data:/app/manager-data
+      - ./services/browser-pool/pool.config.yaml:/app/pool.config.yaml:ro
+      # manager must SEE the host paths it hands to the docker daemon — mount
+      # the data root at its own host path (extensions_root isdir() check, and
+      # profile/lease makedirs, resolve against this view)
+      - ${PENTERA_ROOT:-/opt/pentera}:${PENTERA_ROOT:-/opt/pentera}
+    environment:
+      POOL_CONFIG: /app/pool.config.yaml
+    ports:
+      - "127.0.0.1:8000:8000"   # bound to localhost — bp-mcp reaches it in-net
+    restart: unless-stopped
+
+  bp-mcp:
+    build: ./services/bp-mcp
+    image: penora/bp-mcp:dev
+    networks:
+      - pentera-net
+    volumes:
+      - ./services/bp-mcp/data:/data       # sessions.json persistence
+    environment:
+      POOL_MANAGER_URL: http://pool-manager:8000
+      MCP_TOKEN: ${MCP_TOKEN:-}            # optional bearer for the MCP endpoint
+      USE_INTERNAL_URL: "1"                # reach pods via pentera-net
+      # operator console + noVNC proxy on the same port:
+      VNC_TOKEN: ${VNC_TOKEN:-}            # ?k= token for the console (default: MCP_TOKEN)
+      VNC_PUBLIC_BASE: ${VNC_PUBLIC_BASE:-http://127.0.0.1:9100}
+      ARTEX_URL: ${ARTEX_URL:-}            # paused-intent watch (ask_operator waits)
+      ARTEX_PASSWORD: ${ARTEX_PASSWORD:-}
+      TG_BOT_TOKEN: ${TG_BOT_TOKEN:-}      # telegram push on worker wait
+      TG_CHAT_ID: ${TG_CHAT_ID:-}
+      SSH_HINT: ${SSH_HINT:-ssh -L 8787:127.0.0.1:8787 -L 9100:127.0.0.1:9100 hunter@173.249.6.22}
+    ports:
+      # MCP endpoint for ARTEX. Bind to localhost + reverse-proxy/tunnel, or
+      # open only to the ARTEX host. NOT meant to be public without MCP_TOKEN.
+      - "127.0.0.1:9100:9100"
+    depends_on:
+      - pool-manager
+    restart: unless-stopped
+
+  traffic-bridge:
+    build: ./services/traffic-bridge
+    image: penora/traffic-bridge:dev
+    networks:
+      - pentera-net                # must resolve ARTEX_URL (e.g. http://artex:8787)
+    volumes:
+      # read-only view of the pod exchange stores (host path must match
+      # pool.config.yaml's data_root)
+      - ${PENTERA_DATA_ROOT:-/opt/pentera/lease-data}:/lease-data:ro
+      - ./bridge-state:/state            # rw state store (offsets per lease)
+    environment:
+      ARTEX_URL: ${ARTEX_URL:-http://172.17.0.1:8787}
+      ARTEX_PASSWORD: ${ARTEX_PASSWORD:-}
+      ARTEX_TOKEN: ${ARTEX_TOKEN:-}
+      POLL_S: "3"
+      SKIP_HOSTS: ${BRIDGE_SKIP_HOSTS:-}
+    restart: unless-stopped
